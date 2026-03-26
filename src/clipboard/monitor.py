@@ -71,13 +71,13 @@ class ClipboardMonitor(QObject):
                     return
                 content = self._image_to_base64(image)
                 preview = f"[图片 {image.width()}x{image.height()}]"
-            elif mime_data.hasHtml():
-                content_type = ContentType.HTML
-                content = mime_data.html()
-                preview = self._extract_text_preview(content)
             elif mime_data.hasText():
                 content_type = ContentType.TEXT
                 content = mime_data.text()
+                preview = self._extract_text_preview(content)
+            elif mime_data.hasHtml():
+                content_type = ContentType.HTML
+                content = mime_data.html()
                 preview = self._extract_text_preview(content)
             else:
                 return
