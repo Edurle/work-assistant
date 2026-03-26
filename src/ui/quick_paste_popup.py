@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QFrame, QApplication
+    QLabel, QFrame, QLineEdit
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication
@@ -21,6 +21,7 @@ class QuickPastePopup(QWidget):
         self._items: list[ClipboardItem] = []
         self._categories: list[Category] = []
         self._current_category_index: int = 0
+        self._search_mode: bool = False
 
         self._setup_window()
         self._init_ui()
@@ -89,6 +90,22 @@ class QuickPastePopup(QWidget):
         self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         container_layout.addWidget(self.header_label)
 
+        # 搜索框（初始隐藏）
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("输入搜索内容...")
+        self.search_input.setObjectName("searchInput")
+        self.search_input.setStyleSheet("""
+            QLineEdit#searchInput {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 13px;
+            }
+        """)
+        self.search_input.textChanged.connect(self._on_search)
+        self.search_input.hide()
+        container_layout.addWidget(self.search_input)
+
         # 列表
         self.list_widget = QListWidget()
         self.list_widget.setSelectionBehavior(QListWidget.SelectionBehavior.SelectRows)
@@ -97,16 +114,16 @@ class QuickPastePopup(QWidget):
         container_layout.addWidget(self.list_widget, 1)
 
         # 底部提示
-        footer = QLabel("A/D 切换分类 | W/S 选择 | F 粘贴 | Esc 关闭")
-        footer.setObjectName("footerLabel")
-        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_layout.addWidget(footer)
+        self.footer_label = QLabel("Q 搜索 | A/D 分类 | W/S 选择 | F 粘贴 | Esc 关闭")
+        self.footer_label.setObjectName("footerLabel")
+        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(self.footer_label)
 
     def _setup_shortcuts(self):
         """设置快捷键"""
-        # Esc 关闭
+        # Esc 关闭或退出搜索
         esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        esc_shortcut.activated.connect(self.hide_popup)
+        esc_shortcut.activated.connect(self._on_escape)
 
         # Enter 粘贴
         enter_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
@@ -122,6 +139,10 @@ class QuickPastePopup(QWidget):
 
         down_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
         down_shortcut.activated.connect(self._select_next)
+
+        # Q 进入搜索
+        q_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Q), self)
+        q_shortcut.activated.connect(self._enter_search_mode)
 
         # A/D 切换分类
         a_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
@@ -272,6 +293,71 @@ class QuickPastePopup(QWidget):
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
 
+    def _on_escape(self):
+        """处理Esc键"""
+        if self._search_mode:
+            self._exit_search_mode()
+        else:
+            self.hide_popup()
+
+    def _enter_search_mode(self):
+        """进入搜索模式"""
+        self._search_mode = True
+        self.search_input.show()
+        self.search_input.clear()
+        self.search_input.setFocus()
+        self.footer_label.setText("Enter 粘贴 | Esc 退出搜索")
+
+    def _exit_search_mode(self):
+        """退出搜索模式"""
+        self._search_mode = False
+        self.search_input.hide()
+        self.search_input.clear()
+        self._load_items()
+        self.list_widget.setFocus()
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+        self.footer_label.setText("Q 搜索 | A/D 分类 | W/S 选择 | F 粘贴 | Esc 关闭")
+
+    def _on_search(self, text: str):
+        """搜索过滤"""
+        if not self._search_mode:
+            return
+
+        self.list_widget.clear()
+
+        if not text:
+            # 空搜索，显示所有项
+            self._update_header()
+            for item in self._items:
+                self._add_list_item(item)
+            return
+
+        # 过滤匹配的项
+        query = text.lower()
+        for item in self._items:
+            content = (item.content or "").lower()
+            preview = (item.preview or "").lower()
+            if query in content or query in preview:
+                self._add_list_item(item)
+
+        # 更新标题显示搜索结果数
+        count = self.list_widget.count()
+        self.header_label.setText(f"搜索结果: {count} 条")
+
+        if count > 0:
+            self.list_widget.setCurrentRow(0)
+
+    def _add_list_item(self, item: ClipboardItem):
+        """添加列表项"""
+        list_item = QListWidgetItem()
+        preview = item.preview or (item.content[:80] if item.content else "")
+        if item.is_favorite:
+            preview = "⭐ " + preview
+        list_item.setText(preview)
+        list_item.setData(Qt.ItemDataRole.UserRole, item.id)
+        self.list_widget.addItem(list_item)
+
     def focusOutEvent(self, event):
         """失去焦点时关闭"""
         QTimer.singleShot(150, self._check_focus)
@@ -280,5 +366,10 @@ class QuickPastePopup(QWidget):
         """检查焦点"""
         if not self.isVisible():
             return
-        if not self.hasFocus() and not self.list_widget.hasFocus():
-            self.hide_popup()
+        if self._search_mode:
+            # 搜索模式下检查搜索框焦点
+            if not self.hasFocus() and not self.list_widget.hasFocus() and not self.search_input.hasFocus():
+                self.hide_popup()
+        else:
+            if not self.hasFocus() and not self.list_widget.hasFocus():
+                self.hide_popup()

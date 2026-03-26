@@ -231,16 +231,17 @@ class ClipboardPanel(QWidget):
             self.status_label.setText(f"共 {len(self._items)} 条记录")
 
     def _clear_history(self):
-        """清空历史"""
+        """清空历史（保留收藏）"""
         reply = QMessageBox.question(
             self, "确认清空",
-            "确定要清空所有剪贴板历史吗？",
+            "确定要清空所有剪贴板历史吗？\n（收藏的项目将被保留）",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             for item in self._items:
-                self.manager.delete_item(item.id)
+                if not item.is_favorite:
+                    self.manager.delete_item(item.id)
             self._load_items()
 
     def set_font_size(self, size: int):
