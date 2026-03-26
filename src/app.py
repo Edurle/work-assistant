@@ -42,7 +42,7 @@ class WorkAssistantApp(QObject):
         # 初始化快捷键和快速粘贴
         if self.config.data.quick_paste_enabled:
             self.hotkey_manager = HotkeyManager(self)
-            self.quick_paste_popup = QuickPastePopup(self.clipboard_manager, self)
+            self.quick_paste_popup = QuickPastePopup(self.clipboard_manager, None)
         else:
             self.hotkey_manager = None
             self.quick_paste_popup = None
