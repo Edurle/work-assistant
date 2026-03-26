@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.ui.clipboard_panel import ClipboardPanel
 from src.ui.reminder_panel import ReminderPanel
+from src.ui.settings_dialog import SettingsDialog
 
 
 class MainWindow(QMainWindow):
@@ -25,6 +26,7 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._restore_geometry()
         self._create_toolbar()
+        self._apply_font_settings()
 
         logger.debug("主窗口初始化完成")
 
@@ -122,8 +124,17 @@ class MainWindow(QMainWindow):
 
     def _open_settings(self):
         """打开设置"""
-        from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "设置", "设置功能开发中...")
+        dialog = SettingsDialog(self.config, self)
+        if dialog.exec() == SettingsDialog.DialogCode.Accepted:
+            self._apply_font_settings()
+            self.status_bar.showMessage("设置已保存", 2000)
+
+    def _apply_font_settings(self):
+        """应用字体设置到所有面板"""
+        cfg = self.config.data
+        self.clipboard_panel.set_font_size(cfg.clipboard_font_size)
+        self.reminder_panel.set_font_size(cfg.reminder_font_size)
+        logger.info("字体设置已应用")
 
     def _show_about(self):
         """显示关于"""

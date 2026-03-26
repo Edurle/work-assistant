@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QDateTimeEdit, QSpinBox, QCheckBox, QTextEdit, QGroupBox, QRadioButton
 )
 from PySide6.QtCore import Qt, Signal, QDateTime
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFont
 from loguru import logger
 from datetime import datetime, timedelta
 
@@ -343,3 +343,15 @@ class ReminderPanel(QWidget):
             self.list_widget.takeItem(self.list_widget.row(list_item))
             self._reminders.remove(reminder)
             self.status_label.setText(f"共 {len(self._reminders)} 条提醒")
+
+    def set_font_size(self, size: int):
+        """设置字体大小"""
+        font = QFont()
+        font.setPointSize(size)
+
+        # 应用到各个控件
+        self.list_widget.setFont(font)
+        self.filter_combo.setFont(font)
+        self.status_label.setFont(font)
+
+        logger.debug(f"提醒面板字体大小设置为: {size}pt")

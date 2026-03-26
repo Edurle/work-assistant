@@ -32,6 +32,10 @@ class AppConfig:
     theme: str = "light"
     auto_start: bool = False  # 开机自启动
 
+    # 字体设置
+    clipboard_font_size: int = 10  # 剪贴板面板字体大小（pt）
+    reminder_font_size: int = 10   # 提醒面板字体大小（pt）
+
 
 class Config:
     """配置管理类（单例模式）"""

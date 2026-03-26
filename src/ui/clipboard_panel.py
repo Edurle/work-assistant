@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLabel, QMenu, QMessageBox, QInputDialog, QApplication
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFont
 from loguru import logger
 from datetime import datetime
 
@@ -237,3 +237,16 @@ class ClipboardPanel(QWidget):
             for item in self._items:
                 self.manager.delete_item(item.id)
             self._load_items()
+
+    def set_font_size(self, size: int):
+        """设置字体大小"""
+        font = QFont()
+        font.setPointSize(size)
+
+        # 应用到各个控件
+        self.list_widget.setFont(font)
+        self.search_input.setFont(font)
+        self.category_combo.setFont(font)
+        self.status_label.setFont(font)
+
+        logger.debug(f"剪贴板面板字体大小设置为: {size}pt")
