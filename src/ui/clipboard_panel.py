@@ -74,6 +74,11 @@ class ClipboardPanel(QWidget):
         refresh_btn.clicked.connect(self._load_items)
         toolbar.addWidget(refresh_btn)
 
+        # 管理分类按钮
+        manage_cat_btn = QPushButton("管理分类")
+        manage_cat_btn.clicked.connect(self._manage_categories)
+        toolbar.addWidget(manage_cat_btn)
+
         layout.addLayout(toolbar)
 
         # 列表
@@ -250,3 +255,23 @@ class ClipboardPanel(QWidget):
         self.status_label.setFont(font)
 
         logger.debug(f"剪贴板面板字体大小设置为: {size}pt")
+
+    def _manage_categories(self):
+        """打开分类管理对话框"""
+        from src.ui.category_dialog import CategoryManagerDialog
+        dialog = CategoryManagerDialog(self.manager, self)
+        dialog.exec()
+        self._refresh_category_combo()
+
+    def _refresh_category_combo(self):
+        """刷新分类下拉框"""
+        current_data = self.category_combo.currentData()
+        self.category_combo.clear()
+        self.category_combo.addItem("全部分类", None)
+        for cat in self.manager.get_categories():
+            self.category_combo.addItem(cat.name, cat.id)
+        # 尝试恢复之前选中的分类
+        for i in range(self.category_combo.count()):
+            if self.category_combo.itemData(i) == current_data:
+                self.category_combo.setCurrentIndex(i)
+                break
