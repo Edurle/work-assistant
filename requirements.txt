@@ -1,0 +1,12 @@
+# GUI框架
+PySide6>=6.5.0
+
+# 跨平台通知
+plyer>=2.1.0
+notify2>=0.3.1; sys_platform == 'linux'
+
+# 图像处理
+Pillow>=10.0.0
+
+# 日志
+loguru>=0.7.0
