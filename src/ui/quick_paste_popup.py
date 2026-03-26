@@ -9,7 +9,7 @@ from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication
 from pynput.keyboard import Controller, Key
 from loguru import logger
 
-from src.clipboard.models import ClipboardItem
+from src.clipboard.models import ClipboardItem, Category
 
 
 class QuickPastePopup(QWidget):
@@ -19,7 +19,8 @@ class QuickPastePopup(QWidget):
         super().__init__(parent)
         self.manager = clipboard_manager
         self._items: list[ClipboardItem] = []
-        self._current_category_id = None
+        self._categories: list[Category] = []
+        self._current_category_index: int = 0
 
         self._setup_window()
         self._init_ui()
@@ -83,10 +84,10 @@ class QuickPastePopup(QWidget):
         container_layout.setSpacing(0)
 
         # 标题栏
-        header = QLabel("剪贴板历史 (Alt+V)")
-        header.setObjectName("headerLabel")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_layout.addWidget(header)
+        self.header_label = QLabel("剪贴板历史 (Alt+V)")
+        self.header_label.setObjectName("headerLabel")
+        self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(self.header_label)
 
         # 列表
         self.list_widget = QListWidget()
@@ -96,7 +97,7 @@ class QuickPastePopup(QWidget):
         container_layout.addWidget(self.list_widget, 1)
 
         # 底部提示
-        footer = QLabel("Enter 或 Ctrl+V 粘贴 | Esc 关闭")
+        footer = QLabel("A/D 切换分类 | W/S 选择 | F 粘贴 | Esc 关闭")
         footer.setObjectName("footerLabel")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         container_layout.addWidget(footer)
@@ -122,9 +123,32 @@ class QuickPastePopup(QWidget):
         down_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
         down_shortcut.activated.connect(self._select_next)
 
+        # A/D 切换分类
+        a_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
+        a_shortcut.activated.connect(self._prev_category)
+
+        d_shortcut = QShortcut(QKeySequence(Qt.Key.Key_D), self)
+        d_shortcut.activated.connect(self._next_category)
+
+        # W/S 选择项目
+        w_shortcut = QShortcut(QKeySequence(Qt.Key.Key_W), self)
+        w_shortcut.activated.connect(self._select_previous)
+
+        s_shortcut = QShortcut(QKeySequence(Qt.Key.Key_S), self)
+        s_shortcut.activated.connect(self._select_next)
+
+        # F 粘贴
+        f_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F), self)
+        f_shortcut.activated.connect(self._paste_selected)
+
     def show_popup(self):
         """显示弹窗"""
+        # 加载分类数据
+        self._categories = self.manager.get_categories()
+        self._current_category_index = 0
+
         self._load_items()
+        self._update_header()
         self._position_window()
         self.show()
         self.raise_()
@@ -148,14 +172,15 @@ class QuickPastePopup(QWidget):
         """加载剪贴板项"""
         self.list_widget.clear()
 
-        # 获取第一个分类
-        categories = self.manager.get_categories()
-        if categories:
-            self._current_category_id = categories[0].id
+        # 获取当前分类ID
+        if self._categories and 0 <= self._current_category_index < len(self._categories):
+            category_id = self._categories[self._current_category_index].id
+        else:
+            category_id = None
 
         # 加载该分类的项
         self._items = self.manager.get_items(
-            category_id=self._current_category_id,
+            category_id=category_id,
             limit=50
         )
 
@@ -208,6 +233,44 @@ class QuickPastePopup(QWidget):
         row = self.list_widget.currentRow()
         if row < self.list_widget.count() - 1:
             self.list_widget.setCurrentRow(row + 1)
+
+    def _update_header(self):
+        """更新标题栏显示"""
+        if self._categories and 0 <= self._current_category_index < len(self._categories):
+            cat_name = self._categories[self._current_category_index].name
+            cat_count = len(self._categories)
+            self.header_label.setText(f"剪贴板历史 - {cat_name} ({self._current_category_index + 1}/{cat_count})")
+        else:
+            self.header_label.setText("剪贴板历史 (Alt+V)")
+
+    def _prev_category(self):
+        """切换到上一个分类"""
+        if not self._categories:
+            return
+
+        self._current_category_index -= 1
+        if self._current_category_index < 0:
+            self._current_category_index = len(self._categories) - 1
+
+        self._on_category_changed()
+
+    def _next_category(self):
+        """切换到下一个分类"""
+        if not self._categories:
+            return
+
+        self._current_category_index += 1
+        if self._current_category_index >= len(self._categories):
+            self._current_category_index = 0
+
+        self._on_category_changed()
+
+    def _on_category_changed(self):
+        """分类变化处理"""
+        self._load_items()
+        self._update_header()
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
 
     def focusOutEvent(self, event):
         """失去焦点时关闭"""
