@@ -7,12 +7,14 @@ import sys
 
 from src.core.database import Database
 from src.core.config import Config
+from src.core.hotkey_manager import HotkeyManager
 from src.clipboard.monitor import ClipboardMonitor
 from src.clipboard.manager import ClipboardManager
 from src.reminder.scheduler import ReminderScheduler
 from src.reminder.notification import NotificationManager
 from src.ui.main_window import MainWindow
 from src.ui.system_tray import SystemTrayIcon
+from src.ui.quick_paste_popup import QuickPastePopup
 
 
 class WorkAssistantApp(QObject):
@@ -36,6 +38,14 @@ class WorkAssistantApp(QObject):
         self.clipboard_manager = ClipboardManager(self.db)
         self.reminder_scheduler = ReminderScheduler(self.db, self)
         self.notification_manager = NotificationManager()
+
+        # 初始化快捷键和快速粘贴
+        if self.config.data.quick_paste_enabled:
+            self.hotkey_manager = HotkeyManager(self)
+            self.quick_paste_popup = QuickPastePopup(self.clipboard_manager, self)
+        else:
+            self.hotkey_manager = None
+            self.quick_paste_popup = None
 
         # 初始化UI
         self.main_window = MainWindow(
@@ -80,6 +90,12 @@ class WorkAssistantApp(QObject):
             self._show_add_reminder
         )
 
+        # 快捷键
+        if self.hotkey_manager:
+            self.hotkey_manager.alt_v_triggered.connect(
+                self._show_quick_paste
+            )
+
     @Slot(object)
     def _on_clipboard_changed(self, item):
         """处理剪贴板变化"""
@@ -119,6 +135,8 @@ class WorkAssistantApp(QObject):
         """运行应用"""
         self.clipboard_monitor.start_monitoring()
         self.reminder_scheduler.start()
+        if self.hotkey_manager:
+            self.hotkey_manager.start()
         self.system_tray.show()
 
         if not self.config.data.start_minimized:
@@ -130,7 +148,15 @@ class WorkAssistantApp(QObject):
     def quit(self):
         """退出应用"""
         logger.info("正在退出应用...")
+        if self.hotkey_manager:
+            self.hotkey_manager.stop()
         self.clipboard_monitor.stop_monitoring()
         self.reminder_scheduler.stop()
         self.config.save()
         self.app.quit()
+
+    @Slot()
+    def _show_quick_paste(self):
+        """显示快速粘贴弹窗"""
+        if self.quick_paste_popup:
+            self.quick_paste_popup.show_popup()

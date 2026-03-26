@@ -36,6 +36,9 @@ class AppConfig:
     clipboard_font_size: int = 10  # 剪贴板面板字体大小（pt）
     reminder_font_size: int = 10   # 提醒面板字体大小（pt）
 
+    # 快速粘贴设置
+    quick_paste_enabled: bool = True
+
 
 class Config:
     """配置管理类（单例模式）"""

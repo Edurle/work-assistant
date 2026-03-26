@@ -1,0 +1,221 @@
+"""快速粘贴弹窗模块"""
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QFrame, QApplication
+)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication
+from pynput.keyboard import Controller, Key
+from loguru import logger
+
+from src.clipboard.models import ClipboardItem
+
+
+class QuickPastePopup(QWidget):
+    """快速粘贴弹窗"""
+
+    def __init__(self, clipboard_manager, parent=None):
+        super().__init__(parent)
+        self.manager = clipboard_manager
+        self._items: list[ClipboardItem] = []
+        self._current_category_id = None
+
+        self._setup_window()
+        self._init_ui()
+        self._setup_shortcuts()
+
+    def _setup_window(self):
+        """设置窗口属性"""
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(400, 500)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def _init_ui(self):
+        """初始化UI"""
+        self.container = QFrame()
+        self.container.setObjectName("popupContainer")
+        self.container.setStyleSheet("""
+            #popupContainer {
+                background-color: rgba(255, 255, 255, 245);
+                border-radius: 10px;
+                border: 1px solid #ddd;
+            }
+            QListWidget {
+                border: none;
+                background-color: transparent;
+                font-size: 13px;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #eee;
+            }
+            QListWidget::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QListWidget::item:hover:!selected {
+                background-color: #ecf0f1;
+            }
+            QLabel#headerLabel {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QLabel#footerLabel {
+                font-size: 11px;
+                color: #888;
+                padding: 5px;
+            }
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.addWidget(self.container)
+
+        container_layout = QVBoxLayout(self.container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
+        # 标题栏
+        header = QLabel("剪贴板历史 (Alt+V)")
+        header.setObjectName("headerLabel")
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(header)
+
+        # 列表
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionBehavior(QListWidget.SelectionBehavior.SelectRows)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list_widget.itemDoubleClicked.connect(self._paste_selected)
+        container_layout.addWidget(self.list_widget, 1)
+
+        # 底部提示
+        footer = QLabel("Enter 或 Ctrl+V 粘贴 | Esc 关闭")
+        footer.setObjectName("footerLabel")
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        container_layout.addWidget(footer)
+
+    def _setup_shortcuts(self):
+        """设置快捷键"""
+        # Esc 关闭
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc_shortcut.activated.connect(self.hide_popup)
+
+        # Enter 粘贴
+        enter_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
+        enter_shortcut.activated.connect(self._paste_selected)
+
+        # Ctrl+V 粘贴
+        ctrl_v_shortcut = QShortcut(QKeySequence("Ctrl+V"), self)
+        ctrl_v_shortcut.activated.connect(self._paste_selected)
+
+        # 上下箭头导航
+        up_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
+        up_shortcut.activated.connect(self._select_previous)
+
+        down_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
+        down_shortcut.activated.connect(self._select_next)
+
+    def show_popup(self):
+        """显示弹窗"""
+        self._load_items()
+        self._position_window()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.list_widget.setFocus()
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+
+    def hide_popup(self):
+        """隐藏弹窗"""
+        self.hide()
+
+    def _position_window(self):
+        """定位窗口 - 屏幕中央偏上"""
+        screen = QGuiApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 3
+        self.move(x, y)
+
+    def _load_items(self):
+        """加载剪贴板项"""
+        self.list_widget.clear()
+
+        # 获取第一个分类
+        categories = self.manager.get_categories()
+        if categories:
+            self._current_category_id = categories[0].id
+
+        # 加载该分类的项
+        self._items = self.manager.get_items(
+            category_id=self._current_category_id,
+            limit=50
+        )
+
+        for item in self._items:
+            list_item = QListWidgetItem()
+            preview = item.preview or (item.content[:80] if item.content else "")
+            if item.is_favorite:
+                preview = "⭐ " + preview
+            list_item.setText(preview)
+            list_item.setData(Qt.ItemDataRole.UserRole, item.id)
+            self.list_widget.addItem(list_item)
+
+    def _paste_selected(self):
+        """粘贴选中项"""
+        current = self.list_widget.currentItem()
+        if not current:
+            return
+
+        item_id = current.data(Qt.ItemDataRole.UserRole)
+        clipboard_item = next((i for i in self._items if i.id == item_id), None)
+
+        if clipboard_item:
+            # 复制到剪贴板
+            self.manager.copy_to_clipboard(clipboard_item)
+
+            # 延迟执行粘贴
+            self.hide_popup()
+            QTimer.singleShot(100, self._do_paste)
+
+    def _do_paste(self):
+        """执行粘贴操作"""
+        try:
+            keyboard = Controller()
+            keyboard.press(Key.ctrl)
+            keyboard.press('v')
+            keyboard.release('v')
+            keyboard.release(Key.ctrl)
+            logger.debug("已模拟 Ctrl+V 粘贴")
+        except Exception as e:
+            logger.error(f"模拟粘贴失败: {e}")
+
+    def _select_previous(self):
+        """选择上一项"""
+        row = self.list_widget.currentRow()
+        if row > 0:
+            self.list_widget.setCurrentRow(row - 1)
+
+    def _select_next(self):
+        """选择下一项"""
+        row = self.list_widget.currentRow()
+        if row < self.list_widget.count() - 1:
+            self.list_widget.setCurrentRow(row + 1)
+
+    def focusOutEvent(self, event):
+        """失去焦点时关闭"""
+        QTimer.singleShot(150, self._check_focus)
+
+    def _check_focus(self):
+        """检查焦点"""
+        if not self.isVisible():
+            return
+        if not self.hasFocus() and not self.list_widget.hasFocus():
+            self.hide_popup()
