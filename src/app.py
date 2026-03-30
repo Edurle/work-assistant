@@ -108,12 +108,7 @@ class WorkAssistantApp(QObject):
         """处理提醒触发"""
         logger.info(f"提醒触发: {reminder.title}")
 
-        self.notification_manager.show_notification(
-            title=reminder.title,
-            message=reminder.content or "时间到了！",
-            sound=reminder.sound_enabled
-        )
-
+        # 只显示正中央弹窗，不显示右下角系统通知
         result = self.notification_manager.show_popup_dialog(reminder)
         if result == 2:
             self.reminder_scheduler.snooze_reminder(reminder.id, minutes=5)

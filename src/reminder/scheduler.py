@@ -26,8 +26,45 @@ class ReminderScheduler(QObject):
     def start(self):
         """启动调度器"""
         self._load_reminders()
+        self._skip_missed_reminders()  # 跳过错过的提醒
         self.check_timer.start(self.check_interval)
         logger.info(f"提醒调度器已启动，当前有 {len(self.reminders)} 个活跃提醒")
+
+    def _skip_missed_reminders(self):
+        """跳过错过的间隔提醒，将 next_trigger 更新到下一个未来时间点"""
+        from datetime import timedelta
+
+        now = datetime.now()
+        for reminder in self.reminders:
+            if reminder.reminder_type == ReminderType.INTERVAL and reminder.next_trigger:
+                if reminder.next_trigger < now:
+                    # 计算间隔秒数
+                    interval_seconds = self._get_interval_seconds(reminder)
+                    if interval_seconds > 0:
+                        # 计算需要跳过多少个间隔才能到达未来时间点
+                        missed_seconds = (now - reminder.next_trigger).total_seconds()
+                        skip_intervals = int(missed_seconds / interval_seconds) + 1
+                        new_trigger = reminder.next_trigger + timedelta(seconds=skip_intervals * interval_seconds)
+
+                        # 更新内存和数据库
+                        reminder.next_trigger = new_trigger
+                        self.db.update(
+                            'reminders',
+                            {'next_trigger': new_trigger.isoformat()},
+                            'id = ?',
+                            (reminder.id,)
+                        )
+                        logger.info(f"跳过提醒 [{reminder.title}] 的 {skip_intervals} 次触发，下次触发时间: {new_trigger}")
+
+    def _get_interval_seconds(self, reminder: Reminder) -> int:
+        """获取间隔秒数"""
+        unit_map = {
+            'seconds': 1,
+            'minutes': 60,
+            'hours': 3600,
+            'days': 86400,
+        }
+        return reminder.interval_value * unit_map.get(reminder.interval_unit.value, 0)
 
     def stop(self):
         """停止调度器"""

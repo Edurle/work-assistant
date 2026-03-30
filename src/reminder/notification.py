@@ -1,6 +1,6 @@
 """跨平台通知模块"""
 
-from PySide6.QtCore import QObject, Qt
+from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QSystemTrayIcon, QMessageBox, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PySide6.QtGui import QIcon
 from typing import Optional
@@ -12,9 +12,13 @@ import subprocess
 class NotificationDialog(QDialog):
     """提醒弹窗对话框"""
 
-    def __init__(self, reminder, parent=None):
+    def __init__(self, reminder, parent=None, auto_close_seconds: int = 3):
         super().__init__(parent)
         self.reminder = reminder
+        self.auto_close_seconds = auto_close_seconds
+        self._auto_close_timer = QTimer(self)
+        self._auto_close_timer.setSingleShot(True)
+        self._auto_close_timer.timeout.connect(self.accept)
         self._init_ui()
 
     def _init_ui(self):
@@ -52,7 +56,28 @@ class NotificationDialog(QDialog):
 
     def _snooze(self):
         """贪睡"""
+        self._cancel_auto_close()
         self.done(2)  # 2 表示贪睡
+
+    def _cancel_auto_close(self):
+        """取消自动关闭"""
+        if self._auto_close_timer.isActive():
+            self._auto_close_timer.stop()
+
+    def exec(self):
+        """执行对话框，启动自动关闭定时器"""
+        self._auto_close_timer.start(self.auto_close_seconds * 1000)
+        return super().exec()
+
+    def accept(self):
+        """确定按钮点击"""
+        self._cancel_auto_close()
+        super().accept()
+
+    def reject(self):
+        """关闭对话框"""
+        self._cancel_auto_close()
+        super().reject()
 
 
 class NotificationManager(QObject):
