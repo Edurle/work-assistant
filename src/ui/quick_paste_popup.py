@@ -2,9 +2,9 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QFrame, QLineEdit, QScrollArea, QDialog
+    QLabel, QFrame, QLineEdit, QScrollArea, QDialog, QApplication
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication, QImage, QPixmap
 from pynput.keyboard import Controller, Key
 from loguru import logger
@@ -291,8 +291,13 @@ class QuickPastePopup(QWidget):
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
 
+        # 安装全局事件过滤器，用于检测点击外部关闭
+        QApplication.instance().installEventFilter(self)
+
     def hide_popup(self):
         """隐藏弹窗"""
+        # 移除事件过滤器
+        QApplication.instance().removeEventFilter(self)
         self.hide()
 
     def _position_window(self):
@@ -486,6 +491,19 @@ class QuickPastePopup(QWidget):
         list_item.setText(preview)
         list_item.setData(Qt.ItemDataRole.UserRole, item.id)
         self.list_widget.addItem(list_item)
+
+    def eventFilter(self, obj, event):
+        """事件过滤器 - 点击外部关闭弹窗"""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # 检查点击是否在弹窗外
+            if self.isVisible():
+                global_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                widget_rect = self.rect()
+                widget_rect.moveTo(self.mapToGlobal(widget_rect.topLeft()))
+                if not widget_rect.contains(global_pos):
+                    self.hide_popup()
+                    return True
+        return super().eventFilter(obj, event)
 
     def focusOutEvent(self, event):
         """失去焦点时关闭"""
