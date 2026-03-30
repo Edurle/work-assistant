@@ -119,6 +119,31 @@ class ContentPreviewDialog(QDialog):
         else:
             super().keyPressEvent(event)
 
+    def update_content(self, item: ClipboardItem):
+        """更新预览内容"""
+        self.item = item
+        # 清除现有布局
+        central_widget = QWidget()
+        new_layout = QVBoxLayout(central_widget)
+        new_layout.setContentsMargins(15, 15, 15, 15)
+
+        if self.item.content_type == ContentType.IMAGE:
+            self._show_image(new_layout)
+        else:
+            self._show_text(new_layout)
+
+        # 关闭提示
+        hint_label = QLabel("按 Esc 或点击关闭")
+        hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint_label.setStyleSheet("color: #888; font-size: 11px; padding: 10px;")
+        new_layout.addWidget(hint_label)
+
+        # 替换中央部件
+        old_central = self.layout().itemAt(0)
+        if old_central:
+            old_central.widget().deleteLater()
+        self.layout().addWidget(central_widget)
+
 
 class QuickPastePopup(QWidget):
     """快速粘贴弹窗"""
@@ -130,6 +155,7 @@ class QuickPastePopup(QWidget):
         self._categories: list[Category] = []
         self._current_category_index: int = 0
         self._search_mode: bool = False
+        self._preview_dialog = None  # 预览对话框引用
 
         self._setup_window()
         self._init_ui()
@@ -160,13 +186,21 @@ class QuickPastePopup(QWidget):
                 border: none;
                 background-color: transparent;
                 font-size: 13px;
+                outline: none;
             }
             QListWidget::item {
                 padding: 8px;
                 border: none;
                 border-bottom: 1px solid #eee;
+                outline: none;
             }
             QListWidget::item:selected {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                outline: none;
+            }
+            QListWidget::item:selected:active {
                 background-color: #3498db;
                 color: white;
                 border: none;
@@ -176,6 +210,13 @@ class QuickPastePopup(QWidget):
                 background-color: #3498db;
                 color: white;
                 border: none;
+                outline: none;
+            }
+            QListWidget::item:selected:!focus {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                outline: none;
             }
             QListWidget::item:hover:!selected {
                 background-color: #ecf0f1;
@@ -227,6 +268,7 @@ class QuickPastePopup(QWidget):
         self.list_widget.setSelectionBehavior(QListWidget.SelectionBehavior.SelectRows)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.itemDoubleClicked.connect(self._paste_selected)
+        self.list_widget.currentItemChanged.connect(self._on_item_changed)
         container_layout.addWidget(self.list_widget, 1)
 
         # 底部提示
@@ -303,6 +345,11 @@ class QuickPastePopup(QWidget):
 
     def hide_popup(self):
         """隐藏弹窗"""
+        # 关闭预览对话框
+        if self._preview_dialog:
+            self._preview_dialog.close()
+            self._preview_dialog = None
+
         # 移除事件过滤器
         QApplication.instance().removeEventFilter(self)
         self.hide()
@@ -366,11 +413,23 @@ class QuickPastePopup(QWidget):
         clipboard_item = next((i for i in self._items if i.id == item_id), None)
 
         if clipboard_item:
-            # 获取主窗口位置，在右侧显示预览
-            main_rect = self.geometry()
-            preview_dialog = ContentPreviewDialog(clipboard_item, self)
-            preview_dialog.move(main_rect.right() + 10, main_rect.top())
-            preview_dialog.exec()
+            # 如果预览对话框已存在，更新内容
+            if self._preview_dialog and self._preview_dialog.isVisible():
+                self._preview_dialog.update_content(clipboard_item)
+            else:
+                # 创建新的预览对话框（非模态）
+                main_rect = self.geometry()
+                self._preview_dialog = ContentPreviewDialog(clipboard_item, self)
+                self._preview_dialog.move(main_rect.right() + 10, main_rect.top())
+                self._preview_dialog.show()
+
+    def _on_item_changed(self, current, previous):
+        """列表项选择变化时更新预览"""
+        if self._preview_dialog and self._preview_dialog.isVisible() and current:
+            item_id = current.data(Qt.ItemDataRole.UserRole)
+            clipboard_item = next((i for i in self._items if i.id == item_id), None)
+            if clipboard_item:
+                self._preview_dialog.update_content(clipboard_item)
 
     def _do_paste(self):
         """执行粘贴操作"""
@@ -436,6 +495,11 @@ class QuickPastePopup(QWidget):
 
     def _on_escape(self):
         """处理Esc键"""
+        # 如果预览对话框存在且可见，先关闭预览
+        if self._preview_dialog and self._preview_dialog.isVisible():
+            self._preview_dialog.close()
+            return
+
         if self._search_mode:
             self._exit_search_mode()
         else:
@@ -505,6 +569,10 @@ class QuickPastePopup(QWidget):
         if event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape:
                 if self.isVisible():
+                    # 如果预览对话框存在且可见，先关闭预览
+                    if self._preview_dialog and self._preview_dialog.isVisible():
+                        self._preview_dialog.close()
+                        return True
                     self.hide_popup()
                     return True
 
