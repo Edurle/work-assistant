@@ -2,14 +2,122 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QFrame, QLineEdit
+    QLabel, QFrame, QLineEdit, QScrollArea, QDialog
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication
+from PySide6.QtGui import QKeySequence, QShortcut, QGuiApplication, QImage, QPixmap
 from pynput.keyboard import Controller, Key
 from loguru import logger
+import base64
 
-from src.clipboard.models import ClipboardItem, Category
+from src.clipboard.models import ClipboardItem, Category, ContentType
+
+
+class ContentPreviewDialog(QDialog):
+    """内容预览对话框"""
+
+    def __init__(self, item: ClipboardItem, parent=None):
+        super().__init__(parent)
+        self.item = item
+        self._setup_window()
+        self._init_ui()
+
+    def _setup_window(self):
+        """设置窗口属性"""
+        self.setWindowTitle("内容预览")
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Dialog
+        )
+        self.setMinimumSize(500, 400)
+        self.resize(600, 500)
+
+    def _init_ui(self):
+        """初始化UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        if self.item.content_type == ContentType.IMAGE:
+            # 图片类型
+            self._show_image(layout)
+        else:
+            # 文本类型
+            self._show_text(layout)
+
+        # 关闭提示
+        hint_label = QLabel("按 Esc 或点击关闭")
+        hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint_label.setStyleSheet("color: #888; font-size: 11px; padding: 10px;")
+        layout.addWidget(hint_label)
+
+    def _show_image(self, layout: QVBoxLayout):
+        """显示图片"""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: #f5f5f5; }")
+
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        image_label.setStyleSheet("background-color: #f5f5f5;")
+
+        try:
+            image_data = base64.b64decode(self.item.content)
+            image = QImage()
+            if image.loadFromData(image_data):
+                # 缩放图片以适应窗口
+                pixmap = QPixmap.fromImage(image)
+                if pixmap.width() > 800 or pixmap.height() > 600:
+                    pixmap = pixmap.scaled(
+                        800, 600,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                image_label.setPixmap(pixmap)
+            else:
+                image_label.setText("无法加载图片")
+                image_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+        except Exception as e:
+            logger.error(f"显示图片失败: {e}")
+            image_label.setText(f"图片加载失败: {e}")
+            image_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+
+        scroll.setWidget(image_label)
+        layout.addWidget(scroll, 1)
+
+    def _show_text(self, layout: QVBoxLayout):
+        """显示文本"""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                background-color: white;
+            }
+        """)
+
+        text_label = QLabel()
+        text_label.setWordWrap(True)
+        text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text_label.setStyleSheet("""
+            QLabel {
+                padding: 15px;
+                font-size: 13px;
+                line-height: 1.5;
+                background-color: white;
+            }
+        """)
+        text_label.setText(self.item.content or "(空内容)")
+
+        scroll.setWidget(text_label)
+        layout.addWidget(scroll, 1)
+
+    def keyPressEvent(self, event):
+        """按键事件 - Esc关闭"""
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
 
 class QuickPastePopup(QWidget):
@@ -60,6 +168,7 @@ class QuickPastePopup(QWidget):
             QListWidget::item:selected {
                 background-color: #3498db;
                 color: white;
+                outline: none;
             }
             QListWidget::item:hover:!selected {
                 background-color: #ecf0f1;
@@ -114,7 +223,7 @@ class QuickPastePopup(QWidget):
         container_layout.addWidget(self.list_widget, 1)
 
         # 底部提示
-        self.footer_label = QLabel("Q 搜索 | A/D 分类 | W/S 选择 | F 粘贴 | Esc 关闭")
+        self.footer_label = QLabel("Q 搜索 | A/D 分类 | W/S 选择 | F 粘贴 | R 预览 | Esc 关闭")
         self.footer_label.setObjectName("footerLabel")
         self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         container_layout.addWidget(self.footer_label)
@@ -161,6 +270,10 @@ class QuickPastePopup(QWidget):
         # F 粘贴
         f_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F), self)
         f_shortcut.activated.connect(self._paste_selected)
+
+        # R 预览完整内容
+        r_shortcut = QShortcut(QKeySequence(Qt.Key.Key_R), self)
+        r_shortcut.activated.connect(self._show_preview)
 
     def show_popup(self):
         """显示弹窗"""
@@ -230,6 +343,22 @@ class QuickPastePopup(QWidget):
             # 延迟执行粘贴
             self.hide_popup()
             QTimer.singleShot(100, self._do_paste)
+
+    def _show_preview(self):
+        """显示选中项的完整内容预览"""
+        current = self.list_widget.currentItem()
+        if not current:
+            return
+
+        item_id = current.data(Qt.ItemDataRole.UserRole)
+        clipboard_item = next((i for i in self._items if i.id == item_id), None)
+
+        if clipboard_item:
+            # 获取主窗口位置，在右侧显示预览
+            main_rect = self.geometry()
+            preview_dialog = ContentPreviewDialog(clipboard_item, self)
+            preview_dialog.move(main_rect.right() + 10, main_rect.top())
+            preview_dialog.exec()
 
     def _do_paste(self):
         """执行粘贴操作"""

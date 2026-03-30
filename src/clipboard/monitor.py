@@ -113,15 +113,18 @@ class ClipboardMonitor(QObject):
     @staticmethod
     def _image_to_base64(image: QImage) -> str:
         """图片转Base64"""
-        from io import BytesIO
-        buffer = BytesIO()
+        from PySide6.QtCore import QBuffer
 
         # 转换为PNG格式
         if image.format() != QImage.Format.Format_ARGB32:
             image = image.convertToFormat(QImage.Format.Format_ARGB32)
 
+        buffer = QBuffer()
+        buffer.open(QBuffer.OpenModeFlag.WriteOnly)
         image.save(buffer, "PNG")
-        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+        data = buffer.data()
+        buffer.close()
+        return base64.b64encode(data.data()).decode('utf-8')
 
     def is_monitoring(self) -> bool:
         """返回监控状态"""
