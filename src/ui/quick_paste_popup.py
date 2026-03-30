@@ -163,12 +163,19 @@ class QuickPastePopup(QWidget):
             }
             QListWidget::item {
                 padding: 8px;
+                border: none;
                 border-bottom: 1px solid #eee;
             }
             QListWidget::item:selected {
                 background-color: #3498db;
                 color: white;
+                border: none;
                 outline: none;
+            }
+            QListWidget::item:selected:focus {
+                background-color: #3498db;
+                color: white;
+                border: none;
             }
             QListWidget::item:hover:!selected {
                 background-color: #ecf0f1;
@@ -493,9 +500,16 @@ class QuickPastePopup(QWidget):
         self.list_widget.addItem(list_item)
 
     def eventFilter(self, obj, event):
-        """事件过滤器 - 点击外部关闭弹窗"""
+        """事件过滤器 - 点击外部关闭弹窗 + ESC键关闭"""
+        # ESC 键关闭（即使失去焦点也能响应）
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Escape:
+                if self.isVisible():
+                    self.hide_popup()
+                    return True
+
+        # 点击外部关闭
         if event.type() == QEvent.Type.MouseButtonPress:
-            # 检查点击是否在弹窗外
             if self.isVisible():
                 global_pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
                 widget_rect = self.rect()
@@ -503,6 +517,7 @@ class QuickPastePopup(QWidget):
                 if not widget_rect.contains(global_pos):
                     self.hide_popup()
                     return True
+
         return super().eventFilter(obj, event)
 
     def focusOutEvent(self, event):
